@@ -66,7 +66,7 @@ def get_auth_manager():
         client_secret=CLIENT_SECRET,
         redirect_uri=REDIRECT_URI,
         scope=SCOPE,
-        cache_path=".cache",  # Helps persist tokens between reruns
+        cache_path=".cache",
         show_dialog=True
     )
 
@@ -78,17 +78,17 @@ for key in ["token_info", "sp", "playlist_id", "code"]:
         st.session_state[key] = None
 
 # -------------------- 🔁 OAuth Callback Handler --------------------
-query_params = st.experimental_get_query_params()
+query_params = st.query_params
 
 if not st.session_state.token_info and "code" in query_params:
-    code = query_params["code"][0]
+    code = query_params["code"]
     try:
         token_info = auth_manager.get_access_token(code, as_dict=True)
         if token_info:
             st.session_state.token_info = token_info
             st.session_state.sp = Spotify(auth=token_info['access_token'])
             st.session_state.code = code
-            st.experimental_set_query_params()  # Clear query params
+            st.query_params.clear()  # Clear query parameters from URL
             st.rerun()
     except Exception as e:
         st.error(f"OAuth Error: {e}")
@@ -132,14 +132,14 @@ if st.session_state.token_info:
         if st.button("🚪 Logout"):
             for key in ["sp", "token_info", "playlist_id", "code"]:
                 st.session_state[key] = None
-            st.experimental_set_query_params()
+            st.query_params.clear()
             st.rerun()
 
     except SpotifyException as e:
         st.error("Spotify API Error: " + str(e))
         for key in ["sp", "token_info", "playlist_id", "code"]:
             st.session_state[key] = None
-        st.experimental_set_query_params()
+        st.query_params.clear()
         st.rerun()
 
 # -------------------- 🟡 Not Logged In --------------------
