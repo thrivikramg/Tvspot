@@ -9,10 +9,10 @@ try:
     CLIENT_SECRET = st.secrets["SPOTIPY_CLIENT_SECRET"]
     REDIRECT_URI = st.secrets["SPOTIPY_REDIRECT_URI"]
 except KeyError as e:
-    st.error(f"Missing secret: {e}. Please set it in Streamlit Cloud > Settings > Secrets.")
+    st.error(f"Missing secret: {e}. Please set it in Streamlit Cloud → Settings → Secrets.")
     st.stop()
 
-SCOPE = "playlist-modify-public playlist-modify-private"
+SCOPE = "playlist-modify-public playlist-modify-private user-read-private"
 
 # -------------------- 🎨 Background Styling --------------------
 BACKGROUND_IMAGE = "https://images.unsplash.com/photo-1647866872319-683f5c4c56e6?fm=jpg&q=60&w=3000"
@@ -66,8 +66,8 @@ def get_auth_manager():
         client_secret=CLIENT_SECRET,
         redirect_uri=REDIRECT_URI,
         scope=SCOPE,
-        show_dialog=True,
-        cache_path=None
+        cache_path=".cache",  # Helps persist tokens between reruns
+        show_dialog=True
     )
 
 auth_manager = get_auth_manager()
@@ -80,7 +80,7 @@ for key in ["token_info", "sp", "playlist_id", "code"]:
 # -------------------- 🔁 OAuth Callback Handler --------------------
 query_params = st.experimental_get_query_params()
 
-if "code" not in st.session_state and "code" in query_params:
+if not st.session_state.token_info and "code" in query_params:
     code = query_params["code"][0]
     try:
         token_info = auth_manager.get_access_token(code, as_dict=True)
@@ -88,23 +88,24 @@ if "code" not in st.session_state and "code" in query_params:
             st.session_state.token_info = token_info
             st.session_state.sp = Spotify(auth=token_info['access_token'])
             st.session_state.code = code
-            st.experimental_set_query_params()  # Clear URL query params
+            st.experimental_set_query_params()  # Clear query params
             st.rerun()
     except Exception as e:
-        st.error("OAuth Error: " + str(e))
+        st.error(f"OAuth Error: {e}")
         st.stop()
 
 # -------------------- 🟢 Authenticated State --------------------
-if st.session_state.sp:
-    sp = st.session_state.sp
+if st.session_state.token_info:
+    sp = st.session_state.sp or Spotify(auth=st.session_state.token_info["access_token"])
+    st.session_state.sp = sp
     try:
         user = sp.current_user()
-        st.success(f"✅ Logged in as {user['display_name']}", icon="✅")
+        st.success(f"✅ Logged in as {user['display_name']} ({user['id']})", icon="✅")
 
         # 🎧 Playlist Creation
         playlist_name = st.text_input("Enter Playlist Name")
         if st.button("🎵 Create Playlist"):
-            if playlist_name.strip() == "":
+            if not playlist_name.strip():
                 st.error("Please enter a valid playlist name.")
             else:
                 new_playlist = sp.user_playlist_create(user["id"], playlist_name)
@@ -115,7 +116,7 @@ if st.session_state.sp:
         if st.session_state.playlist_id:
             song_name = st.text_input("Enter Song Name")
             if st.button("➕ Add Song"):
-                if song_name.strip() == "":
+                if not song_name.strip():
                     st.error("Please enter a song name.")
                 else:
                     results = sp.search(q=song_name, type="track", limit=1)
@@ -125,7 +126,7 @@ if st.session_state.sp:
                         sp.playlist_add_items(st.session_state.playlist_id, [track["uri"]])
                         st.success(f"✅ Added '{track['name']}' by {track['artists'][0]['name']}' to playlist!")
                     else:
-                        st.error("⚠️ Song not found.")
+                        st.warning("⚠️ Song not found.")
 
         # 🚪 Logout
         if st.button("🚪 Logout"):
@@ -135,8 +136,8 @@ if st.session_state.sp:
             st.rerun()
 
     except SpotifyException as e:
-        st.error("Spotify error: " + str(e))
-        for key in ["sp", "token_info", "code"]:
+        st.error("Spotify API Error: " + str(e))
+        for key in ["sp", "token_info", "playlist_id", "code"]:
             st.session_state[key] = None
         st.experimental_set_query_params()
         st.rerun()
